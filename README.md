@@ -20,6 +20,7 @@ A full-stack web application that allows users to submit images for automated AI
 | Authentication | JWT (JSON Web Tokens) |
 | AI Moderation | Anthropic Claude claude-haiku-4-5 (vision) |
 | Containerization | Docker + Docker Compose |
+<img width="1901" height="936" alt="image" src="https://github.com/user-attachments/assets/50ce441a-bacc-43f0-93ae-0671a69f1d6e" />
 
 ## Setup Instructions
 
