@@ -20,7 +20,18 @@ A full-stack web application that allows users to submit images for automated AI
 | Authentication | JWT (JSON Web Tokens) |
 | AI Moderation | Anthropic Claude claude-haiku-4-5 (vision) |
 | Containerization | Docker + Docker Compose |
+Admin Side
 <img width="1901" height="936" alt="image" src="https://github.com/user-attachments/assets/50ce441a-bacc-43f0-93ae-0671a69f1d6e" />
+<img width="1895" height="948" alt="image" src="https://github.com/user-attachments/assets/6dc620d0-a16f-47d1-8f1a-159d40339ccf" />
+<img width="1919" height="953" alt="image" src="https://github.com/user-attachments/assets/be46990f-08f1-44b1-8545-8715436c3595" />
+<img width="1919" height="931" alt="image" src="https://github.com/user-attachments/assets/408eeae5-9bed-4020-bc61-3331097438be" />
+User Side:
+<img width="1920" height="954" alt="image" src="https://github.com/user-attachments/assets/17984afe-3eb0-42aa-8e86-de5c70960600" />
+<img width="1903" height="952" alt="image" src="https://github.com/user-attachments/assets/ba714ccc-8bf5-481c-8d7a-fae7ab593183" />
+<img width="1906" height="924" alt="image" src="https://github.com/user-attachments/assets/51565147-e8e9-4df9-8576-53e028b18aef" />
+<img width="1900" height="954" alt="image" src="https://github.com/user-attachments/assets/370a0fb8-fbda-4f6a-96c4-f0731508db1a" />
+
+
 
 ## Setup Instructions
 
