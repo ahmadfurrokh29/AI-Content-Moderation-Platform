@@ -1,9 +1,13 @@
+// HistoryPage.jsx — Displays a filterable list of the logged-in user's past submissions.
+// Each row links to the detail page. Submissions can also be deleted directly from this list.
+
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../api/axios';
 import VerdictBadge from '../../components/VerdictBadge';
 import toast from 'react-hot-toast';
 
+// Empty string '' = "All" (no filter applied). Backend ignores the param when it's absent.
 const VERDICTS = ['', 'Approved', 'Flagged for Review', 'Blocked'];
 const CATEGORIES = [
   '',
@@ -18,17 +22,21 @@ const CATEGORIES = [
 export default function HistoryPage() {
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
+  // All filter values kept in one object so a single spread update covers any field
   const [filters, setFilters] = useState({ verdict: '', category: '', startDate: '', endDate: '' });
   const [deletingId, setDeletingId] = useState(null);
 
+  // Fetches submissions from the backend, applying only the filters that are non-empty
   const fetchSubmissions = async () => {
     setLoading(true);
     try {
       const params = {};
+      // Only add a param if the filter has a value — omitting it means "no filter"
       if (filters.verdict) params.verdict = filters.verdict;
       if (filters.category) params.category = filters.category;
       if (filters.startDate) params.startDate = filters.startDate;
       if (filters.endDate) params.endDate = filters.endDate;
+      // { params } becomes a query string: /submissions/my?verdict=Blocked&category=...
       const { data } = await api.get('/submissions/my', { params });
       setSubmissions(data.submissions);
     } catch (err) {
@@ -38,14 +46,16 @@ export default function HistoryPage() {
     }
   };
 
+  // Load submissions once when the page first mounts (empty dependency array = run once)
   useEffect(() => { fetchSubmissions(); }, []);
 
   const handleDelete = async (e, id) => {
-    e.preventDefault(); // prevent Link navigation
+    e.preventDefault(); // stop the click from also triggering the <Link> navigation
     if (!window.confirm('Delete this submission? This cannot be undone.')) return;
     setDeletingId(id);
     try {
       await api.delete(`/submissions/${id}`);
+      // Update UI immediately by filtering the deleted item out — no refetch needed
       setSubmissions((prev) => prev.filter((s) => s._id !== id));
       toast.success('Submission deleted');
     } catch (err) {
@@ -59,7 +69,7 @@ export default function HistoryPage() {
     <div>
       <h1 className="text-2xl font-bold text-gray-800 mb-6">My Submissions</h1>
 
-      {/* Filters */}
+      {/* Filter bar — spread operator updates only the changed field, keeps others intact */}
       <div className="bg-white rounded-xl border p-4 mb-6 flex flex-wrap gap-3">
         <select
           value={filters.verdict}
@@ -87,6 +97,7 @@ export default function HistoryPage() {
           onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
+        {/* Manually trigger a fetch with the current filter values */}
         <button
           onClick={fetchSubmissions}
           className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700 transition"
@@ -108,6 +119,7 @@ export default function HistoryPage() {
         <div className="grid grid-cols-1 gap-4">
           {submissions.map((sub) => (
             <div key={sub._id} className="bg-white rounded-xl border shadow-sm p-4 flex items-center gap-4 hover:shadow-md transition">
+              {/* The entire row (except the delete button) is a link to the detail page */}
               <Link to={`/history/${sub._id}`} className="flex items-center gap-4 flex-1 min-w-0">
                 <img
                   src={sub.imageUrl}
@@ -121,6 +133,7 @@ export default function HistoryPage() {
                   <p className="text-xs text-gray-400 mt-0.5">
                     {new Date(sub.createdAt).toLocaleString()}
                   </p>
+                  {/* Show only the categories that were detected (flagged ones) */}
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {sub.categoryResults.filter(c => c.detected).map(c => (
                       <span key={c.category} className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-full">
@@ -132,7 +145,7 @@ export default function HistoryPage() {
                 <VerdictBadge verdict={sub.verdict} />
               </Link>
 
-              {/* Delete button — outside the Link */}
+              {/* Delete button sits outside the <Link> so clicking it doesn't navigate */}
               <button
                 onClick={(e) => handleDelete(e, sub._id)}
                 disabled={deletingId === sub._id}

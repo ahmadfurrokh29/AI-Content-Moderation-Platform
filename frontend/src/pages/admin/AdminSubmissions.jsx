@@ -1,22 +1,27 @@
+// AdminSubmissions.jsx — Admin view of all submissions across all users.
+// Admins can filter by verdict, override a verdict, or permanently delete a submission.
+
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
 import VerdictBadge from '../../components/VerdictBadge';
 import toast from 'react-hot-toast';
 
+// Empty string '' = "All" filter (no restriction). Other values filter by that verdict.
 const VERDICTS = ['', 'Approved', 'Flagged for Review', 'Blocked'];
 
 export default function AdminSubmissions() {
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [verdictFilter, setVerdictFilter] = useState('');
-  const [deletingId, setDeletingId] = useState(null);
-  const [overridingId, setOverridingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);   // ID of submission being deleted
+  const [overridingId, setOverridingId] = useState(null); // ID of submission being overridden
 
   const fetchSubmissions = async () => {
     setLoading(true);
     try {
       const params = {};
-      if (verdictFilter) params.verdict = verdictFilter;
+      if (verdictFilter) params.verdict = verdictFilter; // omit param if filter is "All"
+      // Admin endpoint (/submissions) returns ALL users' submissions, unlike /submissions/my
       const { data } = await api.get('/submissions', { params });
       setSubmissions(data.submissions);
     } catch {
@@ -26,8 +31,10 @@ export default function AdminSubmissions() {
     }
   };
 
+  // Re-fetch automatically whenever the verdict filter changes
   useEffect(() => { fetchSubmissions(); }, [verdictFilter]);
 
+  // Permanently deletes the submission, its image file on disk, and any linked appeal
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this submission permanently? The image file and any related appeal will also be removed.')) return;
     setDeletingId(id);
@@ -42,10 +49,13 @@ export default function AdminSubmissions() {
     }
   };
 
+  // Sends a PATCH request to change a submission's verdict to the given value
   const handleOverride = async (id, verdict) => {
     setOverridingId(id);
     try {
       const { data } = await api.patch(`/submissions/${id}/override`, { verdict });
+      // Update only the changed submission in state — no full refetch needed
+      // Spread keeps all existing fields, then overrides verdict and sets overridden flag
       setSubmissions((prev) =>
         prev.map((s) => (s._id === id ? { ...s, verdict: data.submission.verdict, overridden: true } : s))
       );
@@ -61,7 +71,7 @@ export default function AdminSubmissions() {
     <div>
       <h1 className="text-2xl font-bold text-gray-800 mb-6">All Submissions</h1>
 
-      {/* Filter */}
+      {/* Verdict filter — clicking a pill sets verdictFilter, which triggers useEffect to refetch */}
       <div className="bg-white rounded-xl border p-4 mb-6 flex gap-3 flex-wrap">
         {VERDICTS.map((v) => (
           <button
@@ -69,7 +79,7 @@ export default function AdminSubmissions() {
             onClick={() => setVerdictFilter(v)}
             className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
               verdictFilter === v
-                ? 'bg-indigo-600 text-white'
+                ? 'bg-indigo-600 text-white'   // active filter
                 : 'bg-white border text-gray-600 hover:bg-gray-50'
             }`}
           >
@@ -93,6 +103,7 @@ export default function AdminSubmissions() {
                   className="w-20 h-20 object-cover rounded-lg border flex-shrink-0"
                 />
                 <div className="flex-1 min-w-0">
+                  {/* User info + verdict + override badge */}
                   <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium text-gray-700">
@@ -100,6 +111,7 @@ export default function AdminSubmissions() {
                         <span className="text-gray-400 ml-1 text-xs">({sub.user?.email})</span>
                       </span>
                       <VerdictBadge verdict={sub.verdict} />
+                      {/* "Overridden" badge appears if an admin previously changed this verdict */}
                       {sub.overridden && (
                         <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
                           Overridden
@@ -111,7 +123,7 @@ export default function AdminSubmissions() {
 
                   <p className="text-xs text-gray-500 truncate mb-2">{sub.originalFilename}</p>
 
-                  {/* Detected categories */}
+                  {/* Show detected category tags — or "No violations" if all clean */}
                   <div className="flex flex-wrap gap-1 mb-3">
                     {sub.categoryResults?.filter(c => c.detected).map(c => (
                       <span key={c.category} className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-full">
@@ -123,9 +135,9 @@ export default function AdminSubmissions() {
                     )}
                   </div>
 
-                  {/* Actions */}
+                  {/* Action buttons — override options change based on current verdict */}
                   <div className="flex gap-2 flex-wrap">
-                    {/* Override verdict */}
+                    {/* Only show "Override → Approved" if it's not already Approved */}
                     {sub.verdict !== 'Approved' && (
                       <button
                         onClick={() => handleOverride(sub._id, 'Approved')}
@@ -135,6 +147,7 @@ export default function AdminSubmissions() {
                         Override → Approved
                       </button>
                     )}
+                    {/* Only show "Override → Blocked" if it's not already Blocked */}
                     {sub.verdict !== 'Blocked' && (
                       <button
                         onClick={() => handleOverride(sub._id, 'Blocked')}

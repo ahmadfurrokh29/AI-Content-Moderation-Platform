@@ -1,3 +1,6 @@
+// RegisterPage.jsx — Public page for creating a new account.
+// Same flow as LoginPage but calls register() and has extra fields (name, role).
+
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -6,13 +9,16 @@ import toast from 'react-hot-toast';
 export default function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
+
+  // Form state includes all four fields the backend expects
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'user' });
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    e.preventDefault(); // stop browser default form reload
     setLoading(true);
     try {
+      // register() sends data to the backend, stores the token, and returns the user
       const user = await register(form.name, form.email, form.password, form.role);
       toast.success('Account created!');
       navigate(user.role === 'admin' ? '/admin' : '/upload');
@@ -36,6 +42,7 @@ export default function RegisterPage() {
               type="text"
               required
               value={form.name}
+              // Spread: copy all form fields, then update only `name`
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               placeholder="Ahmad Khan"
@@ -57,7 +64,7 @@ export default function RegisterPage() {
             <input
               type="password"
               required
-              minLength={6}
+              minLength={6} // validated by the browser before the form submits
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -66,6 +73,7 @@ export default function RegisterPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Account Type</label>
+            {/* Role dropdown — defaults to 'user', can be changed to 'admin' */}
             <select
               value={form.role}
               onChange={(e) => setForm({ ...form, role: e.target.value })}

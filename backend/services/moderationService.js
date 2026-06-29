@@ -1,7 +1,15 @@
+// moderationService.js — Core AI analysis logic.
+// Provides two analysis modes:
+//   - Real: sends image to Google Gemini and parses its JSON response
+//   - Mock: generates realistic-looking random results (used when MOCK_AI=true)
+// Also exports the verdict determination logic used by submissionController.
+
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
 
+// The 6 fixed moderation categories used across the entire system.
+// Exported so other files (Policy model, policyController) can import the same list.
 const CATEGORIES = [
   'Graphic Violence',
   'Hate Symbols',
@@ -11,6 +19,8 @@ const CATEGORIES = [
   'Harassment & Humiliation',
 ];
 
+// The prompt sent to Gemini along with the image.
+// Defines each category precisely and instructs the model to return strict JSON only.
 const PROMPT = `You are an AI Content Moderation System.
 
 Analyze the provided image against ALL of the following moderation categories. Carefully inspect the entire image, including people, objects, symbols, text, signs, banners, logos, weapons, gestures, and background elements.
@@ -55,21 +65,29 @@ Return a JSON array with exactly 6 objects in this order:
   {"category": "Harassment & Humiliation", "detected": false, "confidence": 2, "reasoning": "No harassment content."}
 ]`;
 
-// ─── Real Gemini analysis ────────────────────────────────────────────────────
-
+// analyzeWithGemini — sends the image to the Gemini API and parses the JSON response.
+// Steps:
+//   1. Read the image file from disk into a Buffer.
+//   2. Convert to base64 string (Gemini requires inline image data, not a file path).
+//   3. Determine the correct MIME type from the file extension.
+//   4. Send the prompt + image to the Gemini model.
+//   5. Extract the JSON array from the response text (strip any extra text Gemini adds).
+//   6. Normalize the field names and return the 6-element array.
 const analyzeWithGemini = async (imagePath) => {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' });
 
+  // Read file and encode as base64 — Gemini accepts images as inline base64 data
   const imageBuffer = fs.readFileSync(imagePath);
   const base64Image = imageBuffer.toString('base64');
 
+  // Map file extension to MIME type for the API request
   const ext = path.extname(imagePath).toLowerCase();
   const mediaTypeMap = {
-    '.jpg': 'image/jpeg',
+    '.jpg':  'image/jpeg',
     '.jpeg': 'image/jpeg',
-    '.png': 'image/png',
-    '.gif': 'image/gif',
+    '.png':  'image/png',
+    '.gif':  'image/gif',
     '.webp': 'image/webp',
   };
 
@@ -79,21 +97,23 @@ const analyzeWithGemini = async (imagePath) => {
   ]);
 
   const text = result.response.text().trim();
+
+  // Use regex to extract the JSON array in case Gemini includes any surrounding text
   const jsonMatch = text.match(/\[[\s\S]*\]/);
   if (!jsonMatch) throw new Error('Gemini returned invalid response format');
 
   const parsed = JSON.parse(jsonMatch[0]);
+
+  // Normalize field names: Gemini may return 'reasoning' but our DB schema expects 'reason'
   return parsed.map((item) => ({
-    category: item.category,
-    detected: item.detected,
+    category:   item.category,
+    detected:   item.detected,
     confidence: item.confidence,
-    reason: item.reasoning || item.reason || '',
+    reason:     item.reasoning || item.reason || '',
   }));
 };
 
-// ─── Mock analysis (used when MOCK_AI=true or no API key) ────────────────────
-// Produces realistic-looking results for development and demo purposes.
-
+// Pre-written realistic reasons for each category used by the mock service
 const MOCK_REASONS = {
   'Graphic Violence': [
     'No visible blood, injury, or physical harm detected in the image.',
@@ -127,24 +147,32 @@ const MOCK_REASONS = {
   ],
 };
 
+// mockAnalyzeImage — generates random but realistic-looking moderation results.
+// Used in development (MOCK_AI=true) to avoid API quota issues.
+// Each category has a ~15% chance of being flagged, with confidence scores that
+// reflect a real-world distribution (higher when detected, lower when clean).
 const mockAnalyzeImage = () => {
-  // Simulate a mostly-clean image with occasional low-level flags
   return CATEGORIES.map((category) => {
-    const roll = Math.random();
-    const detected = roll > 0.85; // ~15% chance of detection per category
+    const roll     = Math.random();
+    const detected = roll > 0.85; // approximately 15% detection rate per category
+
     const confidence = detected
-      ? Math.floor(Math.random() * 35) + 55  // 55–90 when detected
-      : Math.floor(Math.random() * 25) + 2;  // 2–27 when clean
+      ? Math.floor(Math.random() * 35) + 55  // 55–90% when a violation is detected
+      : Math.floor(Math.random() * 25) + 2;  // 2–27% when the image is clean
 
     const reasons = MOCK_REASONS[category];
-    const reason = detected ? reasons[1] : reasons[Math.floor(Math.random() * 2) === 0 ? 0 : 2] || reasons[0];
+    // Pick the "detected" reason [1] or randomly pick a "clean" reason [0] or [2]
+    const reason = detected
+      ? reasons[1]
+      : reasons[Math.floor(Math.random() * 2) === 0 ? 0 : 2] || reasons[0];
 
     return { category, detected, confidence, reason };
   });
 };
 
-// ─── Public analyzeImage — switches between real and mock ────────────────────
-
+// analyzeImage — public entry point called by submissionController for each uploaded image.
+// Decides whether to use the real Gemini API or the mock service based on environment variables.
+// Falls back to mock if GEMINI_API_KEY is not set, so the app works out of the box.
 const analyzeImage = async (imagePath) => {
   const useMock = process.env.MOCK_AI === 'true' || !process.env.GEMINI_API_KEY;
 
@@ -156,18 +184,28 @@ const analyzeImage = async (imagePath) => {
   return analyzeWithGemini(imagePath);
 };
 
-// ─── Verdict logic ────────────────────────────────────────────────────────────
-
+// determineVerdict — converts the 6 AI category results into a single overall verdict.
+// Logic:
+//   - Start with "Approved" (innocent until proven otherwise).
+//   - For each category result, check if:
+//       a) The category's policy is enabled.
+//       b) The AI confidence is at or above the policy threshold.
+//       c) The category was actually detected.
+//   - If action is "Auto-Block": immediately return "Blocked" (no need to check further).
+//   - If action is "Flag for Review": upgrade verdict to "Flagged for Review" and continue.
+//   - If nothing triggers: return "Approved".
 const determineVerdict = (categoryResults, policies) => {
-  let verdict = 'Approved';
+  let verdict = 'Approved'; // default — only changes if a policy rule is triggered
 
   for (const result of categoryResults) {
+    // Find the matching policy for this category
     const policy = policies.find((p) => p.category === result.category);
 
-    if (!policy || !policy.enabled) continue;
-    if (result.confidence < policy.threshold) continue;
-    if (!result.detected) continue;
+    if (!policy || !policy.enabled) continue;           // skip if policy is disabled
+    if (result.confidence < policy.threshold) continue;  // skip if AI confidence is too low
+    if (!result.detected) continue;                      // skip if category was not detected
 
+    // The most severe action wins — Auto-Block short-circuits the loop entirely
     if (policy.action === 'Auto-Block') return 'Blocked';
     if (policy.action === 'Flag for Review') verdict = 'Flagged for Review';
   }

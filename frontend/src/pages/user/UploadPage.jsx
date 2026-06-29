@@ -1,38 +1,49 @@
+// UploadPage.jsx — Lets the user select one or more images, send them for AI moderation,
+// and view per-image results. Toggles between upload form and result cards.
+
 import { useState, useRef } from 'react';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
 import VerdictBadge from '../../components/VerdictBadge';
 
 export default function UploadPage() {
-  const [files, setFiles] = useState([]);
-  const [previews, setPreviews] = useState([]);
-  const [results, setResults] = useState(null);
+  const [files, setFiles] = useState([]);        // File objects chosen by the user
+  const [previews, setPreviews] = useState([]);  // Temporary browser URLs for thumbnail previews
+  const [results, setResults] = useState(null);  // null = show upload form; array = show result cards
   const [loading, setLoading] = useState(false);
-  const [deletingId, setDeletingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null); // ID of the card currently being deleted
+
+  // Ref pointing to the hidden <input type="file"> so the drop zone div can trigger it programmatically
   const inputRef = useRef();
 
+  // Normalizes files from both click-selection and drag-and-drop into the same state
   const handleFiles = (selected) => {
-    const arr = Array.from(selected);
+    const arr = Array.from(selected); // FileList is array-like but not a real Array
     setFiles(arr);
+    // createObjectURL makes a temporary local URL for each file so previews appear instantly
+    // without uploading anything to the server yet
     setPreviews(arr.map((f) => URL.createObjectURL(f)));
-    setResults(null);
+    setResults(null); // clear old results whenever new files are picked
   };
 
   const handleDrop = (e) => {
-    e.preventDefault();
+    e.preventDefault(); // prevent the browser from opening the dropped file
     handleFiles(e.dataTransfer.files);
   };
 
+  // Packages all selected files into a FormData request and sends to the backend
   const handleSubmit = async () => {
     if (files.length === 0) return toast.error('Please select at least one image');
     setLoading(true);
     try {
+      // FormData is required to send binary file data in HTTP
       const formData = new FormData();
+      // Key must be 'images' to match upload.array('images') in the backend route
       files.forEach((f) => formData.append('images', f));
       const { data } = await api.post('/submissions', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setResults(data.submissions);
+      setResults(data.submissions); // one submission object per image
       toast.success(`${data.count} image(s) analyzed!`);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Upload failed');
@@ -41,9 +52,10 @@ export default function UploadPage() {
     }
   };
 
+  // Deletes one submission from the DB and removes its card from the UI without a full refetch
   const handleDelete = async (submissionId) => {
     if (!window.confirm('Delete this submission? This cannot be undone.')) return;
-    setDeletingId(submissionId);
+    setDeletingId(submissionId); // marks this card's button as "Deleting..."
     try {
       await api.delete(`/submissions/${submissionId}`);
       setResults((prev) => prev.filter((s) => s._id !== submissionId));
@@ -55,6 +67,7 @@ export default function UploadPage() {
     }
   };
 
+  // Clears all state — brings back the empty upload form
   const reset = () => {
     setFiles([]);
     setPreviews([]);
@@ -65,12 +78,13 @@ export default function UploadPage() {
     <div className="max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-800 mb-6">Upload Images for Moderation</h1>
 
+      {/* Show the upload form when results is null, or the result cards when results is an array */}
       {!results ? (
         <>
-          {/* Drop zone */}
+          {/* Drop zone — clicking the div triggers the hidden file input via the ref */}
           <div
             onDrop={handleDrop}
-            onDragOver={(e) => e.preventDefault()}
+            onDragOver={(e) => e.preventDefault()} // required to allow drop events to fire
             onClick={() => inputRef.current.click()}
             className="border-2 border-dashed border-indigo-300 rounded-xl p-10 text-center cursor-pointer hover:bg-indigo-50 transition"
           >
@@ -79,6 +93,7 @@ export default function UploadPage() {
               Select multiple images — each gets its own result card
             </p>
             <p className="text-xs text-gray-400">Supports JPEG, PNG, GIF, WebP — max 10MB each</p>
+            {/* Hidden — visually invisible but still functional for file selection */}
             <input
               ref={inputRef}
               type="file"
@@ -89,7 +104,7 @@ export default function UploadPage() {
             />
           </div>
 
-          {/* Previews grid */}
+          {/* Preview grid — appears after files are selected, before the user clicks Analyze */}
           {previews.length > 0 && (
             <div className="mt-4">
               <p className="text-sm text-gray-500 mb-2">{files.length} image(s) selected:</p>
@@ -100,10 +115,10 @@ export default function UploadPage() {
                     <span className="absolute bottom-1 left-1 text-xs bg-black/60 text-white px-1.5 py-0.5 rounded truncate max-w-[90%]">
                       {files[i]?.name}
                     </span>
-                    {/* Remove from selection */}
+                    {/* Remove-from-selection button — only visible on hover via Tailwind group-hover */}
                     <button
                       onClick={(e) => {
-                        e.stopPropagation();
+                        e.stopPropagation(); // don't also trigger the drop zone's onClick
                         const newFiles = files.filter((_, idx) => idx !== i);
                         const newPreviews = previews.filter((_, idx) => idx !== i);
                         setFiles(newFiles);
@@ -135,12 +150,13 @@ export default function UploadPage() {
           </div>
         </>
       ) : (
-        /* Results — one card per image */
+        /* Result cards — one card per submitted image */
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-700">
               Moderation Results — {results.length} image{results.length > 1 ? 's' : ''}
             </h2>
+            {/* Clicking "Upload more" calls reset(), which sets results back to null */}
             <button onClick={reset} className="text-sm text-indigo-600 hover:underline">
               Upload more
             </button>
@@ -148,8 +164,9 @@ export default function UploadPage() {
 
           {results.map((submission, i) => (
             <div key={submission._id} className="bg-white rounded-xl shadow-sm border p-5">
-              {/* Card header */}
+              {/* Card header: thumbnail + filename + verdict badge + delete button */}
               <div className="flex items-start gap-4">
+                {/* Use the local preview URL (not the server URL) since we still have it */}
                 <img
                   src={previews[i]}
                   alt=""
@@ -172,10 +189,11 @@ export default function UploadPage() {
                     </button>
                   </div>
 
-                  {/* Per-category results */}
+                  {/* Per-category breakdown rows */}
                   <div className="space-y-2 mt-2">
                     {submission.categoryResults.map((cat) => (
                       <div key={cat.category} className="flex items-start gap-2 text-xs">
+                        {/* Red dot = violation detected; green dot = clean */}
                         <span
                           className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${
                             cat.detected ? 'bg-red-500' : 'bg-green-400'
@@ -188,7 +206,7 @@ export default function UploadPage() {
                             {cat.detected ? 'Detected' : 'Clean'}
                           </span>
                           <span className="text-gray-400 ml-1">({cat.confidence}%)</span>
-                          {/* Confidence bar */}
+                          {/* Confidence bar: width set as an inline style percentage */}
                           <div className="w-full bg-gray-100 rounded-full h-1 mt-0.5 mb-0.5">
                             <div
                               className={`h-1 rounded-full ${cat.detected ? 'bg-red-400' : 'bg-green-400'}`}

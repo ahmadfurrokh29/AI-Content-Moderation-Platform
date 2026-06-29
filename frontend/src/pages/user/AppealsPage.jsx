@@ -1,9 +1,13 @@
+// AppealsPage.jsx — Lists all appeals submitted by the logged-in user.
+// Shows the appeal status, the user's original reason, and the admin's response (if any).
+
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../api/axios';
 import VerdictBadge from '../../components/VerdictBadge';
 import toast from 'react-hot-toast';
 
+// Maps each appeal status to its Tailwind color classes for the status badge
 const STATUS_STYLES = {
   Pending: 'bg-yellow-100 text-yellow-800',
   Accepted: 'bg-green-100 text-green-800',
@@ -15,11 +19,12 @@ export default function AppealsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // .then()/.catch()/.finally() is an alternative to async/await — both do the same thing
     api.get('/appeals/my')
       .then(({ data }) => setAppeals(data.appeals))
       .catch(() => toast.error('Failed to load appeals'))
       .finally(() => setLoading(false));
-  }, []);
+  }, []); // empty array = run once on mount
 
   if (loading) return <p className="text-gray-500">Loading...</p>;
 
@@ -39,6 +44,7 @@ export default function AppealsPage() {
           {appeals.map((appeal) => (
             <div key={appeal._id} className="bg-white rounded-xl border shadow-sm p-5">
               <div className="flex items-start gap-4">
+                {/* Optional chaining (?.) prevents a crash if submission was deleted */}
                 {appeal.submission?.imageUrl && (
                   <img
                     src={appeal.submission.imageUrl}
@@ -48,11 +54,13 @@ export default function AppealsPage() {
                 )}
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
+                    {/* Use appeal.status as a key to look up the CSS class from STATUS_STYLES */}
                     <span
                       className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${STATUS_STYLES[appeal.status]}`}
                     >
                       {appeal.status}
                     </span>
+                    {/* Show the submission's current verdict alongside the appeal status */}
                     {appeal.submission?.verdict && (
                       <VerdictBadge verdict={appeal.submission.verdict} />
                     )}
@@ -60,10 +68,14 @@ export default function AppealsPage() {
                   <p className="text-xs text-gray-400 mb-2">
                     Submitted {new Date(appeal.createdAt).toLocaleString()}
                   </p>
+
+                  {/* The reason the user wrote when submitting the appeal */}
                   <div className="bg-gray-50 rounded-lg p-3 mb-2">
                     <p className="text-xs font-medium text-gray-600 mb-1">Your reason:</p>
                     <p className="text-sm text-gray-700">{appeal.reason}</p>
                   </div>
+
+                  {/* Admin's response — only rendered if the admin wrote one */}
                   {appeal.adminResponse && (
                     <div className="bg-indigo-50 rounded-lg p-3">
                       <p className="text-xs font-medium text-indigo-700 mb-1">Admin response:</p>
